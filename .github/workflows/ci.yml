@@ -90,6 +90,10 @@ jobs:
         run: npm run build
       - name: Integration Tests
         run: |
+          # Create required directories for volume mounts
+          mkdir -p certs/api certs/ca
+          touch certs/api/api.crt certs/api/api.key certs/ca/ca.crt
+          
           cp .env.example .env
           # Use placeholder values for required env vars to prevent docker-compose error
           sed -i 's/CHANGE_ME_strong_password_here/ciPassword123/g' .env
@@ -104,8 +108,9 @@ jobs:
           
           docker compose --project-directory . -f docker/docker-compose.yml up -d
           # Wait for services to be ready
-          sleep 30
+          sleep 60
           # Verify health
+          docker compose --project-directory . -f docker/docker-compose.yml ps
           curl -f http://localhost:3000/health || echo "API health check failed"
           curl -f http://localhost:3001/grafana/api/health || echo "Grafana health check failed"
       - name: Cleanup Docker
