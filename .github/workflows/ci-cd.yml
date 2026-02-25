@@ -248,6 +248,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       
+      - name: Stop GHA Services
+        run: |
+          echo "Stopping GHA services to free up ports for Integration Tests..."
+          docker stop $(docker ps -a -q --filter "label=com.github.actions.service=service") || true
+
       - name: Start services with Docker Compose
         run: |
           # Create required directories for volume mounts
