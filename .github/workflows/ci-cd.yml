@@ -251,12 +251,16 @@ jobs:
       - name: Start services with Docker Compose
         run: |
           cp .env.example .env
-          docker compose -f docker/docker-compose.yml --env-file .env up -d
+          export $(cat .env | grep -v '#' | awk '/=/ {print $1}')
+          docker compose -f docker/docker-compose.yml up -d
+
       
       - name: Wait for services
         run: |
           sleep 30
-          docker compose -f docker/docker-compose.yml --env-file .env ps
+          export $(cat .env | grep -v '#' | awk '/=/ {print $1}')
+          docker compose -f docker/docker-compose.yml ps
+
       
       - name: Run health checks
         run: |
@@ -271,11 +275,14 @@ jobs:
       - name: Collect logs on failure
         if: failure()
         run: |
+          export $(cat .env | grep -v '#' | awk '/=/ {print $1}')
           docker compose -f docker/docker-compose.yml logs
       
       - name: Cleanup
         if: always()
-        run: docker compose -f docker/docker-compose.yml --env-file .env down -v
+        run: |
+          export $(cat .env | grep -v '#' | awk '/=/ {print $1}')
+          docker compose -f docker/docker-compose.yml down -v
 
   # Code Quality
   code-quality:
