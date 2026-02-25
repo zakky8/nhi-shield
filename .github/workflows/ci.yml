@@ -88,6 +88,12 @@ jobs:
       - name: Build Frontend
         working-directory: frontend
         run: npm run build
+      - name: Stop GHA Services
+        run: |
+          echo "Stopping GHA services to free up ports for Integration Tests..."
+          # GitHub Actions service containers can be identified and stopped
+          docker stop $(docker ps -a -q --filter "label=com.github.actions.service=service") || true
+          
       - name: Integration Tests
         run: |
           # Create required directories for volume mounts
