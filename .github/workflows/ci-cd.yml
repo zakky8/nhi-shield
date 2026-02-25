@@ -251,12 +251,12 @@ jobs:
       - name: Start services with Docker Compose
         run: |
           cp .env.example .env
-          docker compose -f docker/docker-compose.yml up -d
+          docker compose -f docker/docker-compose.yml --env-file .env up -d
       
       - name: Wait for services
         run: |
           sleep 30
-          docker compose -f docker/docker-compose.yml ps
+          docker compose -f docker/docker-compose.yml --env-file .env ps
       
       - name: Run health checks
         run: |
@@ -275,7 +275,7 @@ jobs:
       
       - name: Cleanup
         if: always()
-        run: docker compose -f docker/docker-compose.yml down -v
+        run: docker compose -f docker/docker-compose.yml --env-file .env down -v
 
   # Code Quality
   code-quality:
