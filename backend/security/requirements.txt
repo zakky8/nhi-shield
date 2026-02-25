@@ -1,0 +1,13 @@
+# NHI Shield - Security Module Dependencies
+
+# Cryptography
+cryptography==41.0.7
+
+# AWS SDK (for secret rotation)
+boto3==1.34.0
+
+# HTTP client
+httpx==0.27.0
+
+# Utilities
+python-dotenv==1.0.0

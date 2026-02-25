@@ -1,0 +1,16 @@
+  ÔùÅ POST /api/auth/logout ÔÇ║ 401 with expired token
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "Token expired"
+    Received: "Invalid token"
+
+    [0m [90m 103 |[39m       [33m.[39m[36mset[39m([32m'Authorization'[39m[33m,[39m [32m`Bearer ${expiredToken}`[39m)
+     [90m 104 |[39m       [33m.[39mexpect([35m401[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 105 |[39m     expect(res[33m.[39mbody[33m.[39merror)[33m.[39mtoBe([32m'Token expired'[39m)[33m;[39m
+     [90m     |[39m                            [31m[1m^[22m[39m
+     [90m 106 |[39m   })[33m;[39m
+     [90m 107 |[39m
+     [90m 108 |[39m   test([32m'401 with malformed token'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+
+      at Object.toBe (server.test.js:105:28)

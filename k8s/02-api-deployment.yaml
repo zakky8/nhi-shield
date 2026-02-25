@@ -1,0 +1,145 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nhi-api
+  namespace: nhi-shield
+  labels:
+    app: nhi-api
+    version: "2.1.0"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nhi-api
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: nhi-api
+        version: "2.1.0"
+    spec:
+      serviceAccountName: nhi-api-sa
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: api
+          image: nhi-shield/api:2.1.0
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3000
+              name: http
+          env:
+            - name: NODE_ENV
+              valueFrom:
+                configMapKeyRef:
+                  name: nhi-shield-config
+                  key: NODE_ENV
+            - name: DATABASE_URL
+              value: "postgresql://nhiadmin:$(DB_PASSWORD)@nhi-postgres:5432/nhishield"
+            - name: NEO4J_URI
+              value: "bolt://nhi-neo4j:7687"
+            - name: REDIS_URL
+              value: "redis://:$(REDIS_PASSWORD)@nhi-redis:6379"
+            - name: INFLUX_URL
+              value: "http://nhi-influxdb:8086"
+            - name: QDRANT_URL
+              value: "http://nhi-qdrant:6333"
+          envFrom:
+            - secretRef:
+                name: nhi-shield-secrets
+            - configMapRef:
+                name: nhi-shield-config
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values: [nhi-api]
+                topologyKey: kubernetes.io/hostname
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nhi-api
+  namespace: nhi-shield
+spec:
+  selector:
+    app: nhi-api
+  ports:
+    - protocol: TCP
+      port: 3000
+      targetPort: 3000
+      name: http
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nhi-api-sa
+  namespace: nhi-shield
+
+---
+# Horizontal Pod Autoscaler
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: nhi-api-hpa
+  namespace: nhi-shield
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: nhi-api
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
