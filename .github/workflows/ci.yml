@@ -109,10 +109,10 @@ jobs:
           sed -i 's/CHANGE_ME_influx_token_here_min_16_chars/ciToken123456789/g' .env
           sed -i 's/CHANGE_ME_qdrant_api_key_here/ciApiKey123/g' .env
           sed -i 's/CHANGE_ME_generate_with_crypto_randomBytes_64/ciSecretKey123/g' .env
-          sed -i 's/CHANGE_ME_32_chars_exactly_here!/ciEncryptionKey32charsLong12345/g' .env
+          sed -i 's/CHANGE_ME_32_chars_exactly_here!/ciTestOnlyEncryptionKey32charsXX/g' .env
           sed -i 's/CHANGE_ME_grafana_password_here/ciPassword123/g' .env
           
-          docker compose --project-directory . -f docker/docker-compose.yml up -d
+          docker compose --project-directory . -f docker/docker-compose.yml up -d --build
           # Wait for services to be ready
           sleep 60
           # Verify health
