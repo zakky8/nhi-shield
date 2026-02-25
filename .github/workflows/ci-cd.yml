@@ -271,12 +271,12 @@ jobs:
           sed -i 's/CHANGE_ME_32_chars_exactly_here!/ciTestOnlyEncryptionKey32charsXX/g' .env
           sed -i 's/CHANGE_ME_grafana_password_here/ciPassword123/g' .env
           
-          docker compose --project-directory . -f docker/docker-compose.yml up -d
+          docker compose --project-directory . -f docker/docker-compose.yml up -d --build
 
       
       - name: Wait for services
         run: |
-          sleep 30
+          sleep 60
           docker compose --project-directory . -f docker/docker-compose.yml ps
 
       
