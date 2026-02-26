@@ -1,0 +1,26 @@
+---
+# Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nhi-shield
+  labels:
+    app.kubernetes.io/name: nhi-shield
+    app.kubernetes.io/version: "2.1.0"
+
+---
+# ConfigMap for non-sensitive config
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nhi-shield-config
+  namespace: nhi-shield
+data:
+  NODE_ENV: "production"
+  API_PORT: "3000"
+  JWT_EXPIRY: "24h"
+  REACT_APP_API_URL: "http://nhi-api:3000/api"
+  INFLUX_ORG: "nhishield"
+  INFLUX_BUCKET: "activity"
+  LOG_LEVEL: "info"
+  ENABLE_METRICS: "true"

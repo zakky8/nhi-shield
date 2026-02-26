@@ -1,0 +1,316 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: nhi-postgres
+    environment:
+      POSTGRES_DB: nhishield
+      POSTGRES_USER: nhiadmin
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/migrations:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U nhiadmin -d nhishield" ]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 60s
+    restart: unless-stopped
+    networks:
+      - nhi-network
+
+  neo4j:
+    image: neo4j:5.15-community
+    container_name: nhi-neo4j
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:?Set NEO4J_PASSWORD in .env}
+      NEO4J_PLUGINS: '["apoc", "graph-data-science"]'
+      NEO4J_dbms_memory_heap_initial__size: 512m
+      NEO4J_dbms_memory_heap_max__size: 1G
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    healthcheck:
+      test: [ "CMD", "cypher-shell", "-u", "neo4j", "-p", "${NEO4J_PASSWORD:?Set NEO4J_PASSWORD in .env}", "RETURN 1" ]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - nhi-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: nhi-redis
+    command: redis-server --requirepass ${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+    networks:
+      - nhi-network
+
+  influxdb:
+    image: influxdb:2.7-alpine
+    container_name: nhi-influxdb
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: nhiadmin
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUX_PASSWORD:?Set INFLUX_PASSWORD in .env}
+      DOCKER_INFLUXDB_INIT_ORG: nhishield
+      DOCKER_INFLUXDB_INIT_BUCKET: activity
+      DOCKER_INFLUXDB_INIT_RETENTION: 30d
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUX_TOKEN:?Set INFLUX_TOKEN in .env}
+    ports:
+      - "8086:8086"
+    volumes:
+      - influxdb_data:/var/lib/influxdb2
+    healthcheck:
+      test: [ "CMD", "influx", "ping" ]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+    networks:
+      - nhi-network
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: nhi-qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    environment:
+      QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:?Set QDRANT_API_KEY in .env}
+    healthcheck:
+      # use bash built-in TCP open since wget/curl not available in container
+      test: [ "CMD-SHELL", "bash -c 'cat < /dev/tcp/localhost/6333 >/dev/null 2>&1'" ]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+      start_period: 60s
+    restart: unless-stopped
+    networks:
+      - nhi-network
+
+  api:
+    build:
+      context: backend/api
+      dockerfile: Dockerfile
+    container_name: nhi-api
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://nhiadmin:${DB_PASSWORD:?Set DB_PASSWORD in .env}@postgres:5432/nhishield
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD:?Set NEO4J_PASSWORD in .env}
+      - REDIS_URL=redis://:${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}@redis:6379
+      - INFLUX_URL=http://influxdb:8086
+      - INFLUX_TOKEN=${INFLUX_TOKEN:?Set INFLUX_TOKEN in .env}
+      - JWT_SECRET=${JWT_SECRET:?Set JWT_SECRET in .env}
+      - JWT_EXPIRY=24h
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:?Set ENCRYPTION_KEY in .env}
+      - QDRANT_URL=http://qdrant:6333
+      - QDRANT_API_KEY=${QDRANT_API_KEY:?Set QDRANT_API_KEY in .env}
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3001}
+      - API_URL=${API_URL:-http://localhost:3000}
+      # mTLS
+      - TLS_CERT=/certs/api/api.crt
+      - TLS_KEY=/certs/api/api.key
+      - DB_SSL=false
+      - TLS_CA=/certs/ca/ca.crt
+      - MTLS_ENABLED=${MTLS_ENABLED:-false}
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      influxdb:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    networks:
+      - nhi-network
+    volumes:
+      - ./certs:/certs:ro
+    # healthcheck is disabled because startup can take longer than the default
+    # and the container will be probed by the integration test script instead.
+    # Commented out to avoid `docker compose up` failing when service is still
+    # initializing.
+    #healthcheck:
+    #  test: [ "CMD", "node", "-e", "require('http').get('http://localhost:3000/health',(r)=>r.statusCode===200?process.exit(0):process.exit(1)).on('error',()=>process.exit(1))" ]
+    #  interval: 30s
+    #  timeout: 10s
+    #  start_period: 15s
+    #  retries: 3
+    restart: unless-stopped
+
+  discovery:
+    build:
+      context: backend/discovery
+      dockerfile: Dockerfile
+    container_name: nhi-discovery
+    environment:
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD:?Set NEO4J_PASSWORD in .env}
+      - DATABASE_URL=postgresql://nhiadmin:${DB_PASSWORD:?Set DB_PASSWORD in .env}@postgres:5432/nhishield
+      - REDIS_URL=redis://:${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}@redis:6379
+      - INFLUX_URL=http://influxdb:8086
+      - INFLUX_TOKEN=${INFLUX_TOKEN:?Set INFLUX_TOKEN in .env}
+      - QDRANT_URL=http://qdrant:6333
+      - QDRANT_API_KEY=${QDRANT_API_KEY:?Set QDRANT_API_KEY in .env}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - nhi-network
+    healthcheck:
+      test: [ "CMD", "python3", "-c", "import sys; sys.exit(0)" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+
+  anomaly-detector:
+    build:
+      context: backend/anomaly
+      dockerfile: Dockerfile
+    container_name: nhi-anomaly
+    environment:
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD:?Set NEO4J_PASSWORD in .env}
+      - DATABASE_URL=postgresql://nhiadmin:${DB_PASSWORD:?Set DB_PASSWORD in .env}@postgres:5432/nhishield
+      - REDIS_URL=redis://:${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}@redis:6379
+      - INFLUX_URL=http://influxdb:8086
+      - INFLUX_TOKEN=${INFLUX_TOKEN:?Set INFLUX_TOKEN in .env}
+      - QDRANT_URL=http://qdrant:6333
+      - QDRANT_API_KEY=${QDRANT_API_KEY:?Set QDRANT_API_KEY in .env}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      influxdb:
+        condition: service_healthy
+    networks:
+      - nhi-network
+    healthcheck:
+      test: [ "CMD", "python3", "-c", "import sys; sys.exit(0)" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: frontend
+      dockerfile: Dockerfile
+    container_name: nhi-frontend
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - REACT_APP_API_URL=${API_URL:-http://localhost:3000}/api
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - nhi-network
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:80/" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+
+  # ─── Monitoring ─────────────────────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./docker/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./docker/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.retention.time=30d'
+    ports:
+      - "9090:9090"
+    networks:
+      - nhi-network
+    healthcheck:
+      test: [ "CMD", "wget", "-q", "--spider", "http://localhost:9090/-/healthy" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:?Set GRAFANA_PASSWORD in .env}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=http://localhost:3001/grafana/
+    volumes:
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - nhi-network
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:3000/api/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  neo4j_data:
+  neo4j_logs:
+  redis_data:
+  influxdb_data:
+  qdrant_data:
+  prometheus_data:
+  grafana_data:
+
+
+networks:
+  nhi-network:
+    driver: bridge

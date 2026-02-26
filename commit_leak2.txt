@@ -1,0 +1,64 @@
+﻿commit a1effc9de816668639ffae424145b2b29cb728ce
+Author: zakky8 <shinojvb995@gmail.com>
+Date:   Thu Feb 26 01:19:53 2026 +0530
+
+    fix(ci): restore paths for root context via project-directory
+
+diff --git a/docker/docker-compose.yml b/docker/docker-compose.yml
+index 9f17f74..e7c474d 100644
+--- a/docker/docker-compose.yml
++++ b/docker/docker-compose.yml
+@@ -10,7 +10,7 @@ services:
+       POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+     volumes:
+       - postgres_data:/var/lib/postgresql/data
+-      - ../database/migrations:/docker-entrypoint-initdb.d
++      - ./database/migrations:/docker-entrypoint-initdb.d
+     ports:
+       - "5432:5432"
+     healthcheck:
+@@ -107,7 +107,7 @@ services:
+ 
+   api:
+     build:
+-      context: ../backend/api
++      context: backend/api
+       dockerfile: Dockerfile
+     container_name: nhi-api
+     environment:
+@@ -147,7 +147,7 @@ services:
+     networks:
+       - nhi-network
+     volumes:
+-      - ../certs:/certs:ro
++      - ./certs:/certs:ro
+     healthcheck:
+       test: [ "CMD", "node", "-e", "require('http').get('http://localhost:3000/health',(r)=>r.statusCode===200?process.exit(0):process.exit(1)).on('error',()=>process.exit(1))" ]
+       interval: 30s
+@@ -158,7 +158,7 @@ services:
+ 
+   discovery:
+     build:
+-      context: ../backend/discovery
++      context: backend/discovery
+       dockerfile: Dockerfile
+     container_name: nhi-discovery
+     environment:
+@@ -189,7 +189,7 @@ services:
+ 
+   anomaly-detector:
+     build:
+-      context: ../backend/anomaly
++      context: backend/anomaly
+       dockerfile: Dockerfile
+     container_name: nhi-anomaly
+     environment:
+@@ -224,7 +224,7 @@ services:
+ 
+   frontend:
+     build:
+-      context: ../frontend
++      context: frontend
+       dockerfile: Dockerfile
+     container_name: nhi-frontend
+     ports:

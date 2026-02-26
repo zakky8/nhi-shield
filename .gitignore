@@ -1,0 +1,76 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Build outputs
+build/
+dist/
+*.egg-info/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Testing
+coverage/
+.nyc_output/
+
+# Database
+*.db
+*.sqlite
+
+# Docker
+.dockerignore
+
+# Misc
+.cache/
+temp/
+tmp/
+.pytest_cache/
+
+# Test output / error logs
+*_errors.log
+*_errors_utf8.log
+test_out.log
+test_output.txt
+
+# Backup files
+*.bak
+*.orig
+*.backup
+
+# Python virtual envs
+.venv/
+venv/
+env/
+
+# Certificates (keep structure, not actual certs)
+certs/*.crt
+certs/*.key
+certs/*.pem
+certs/**/*.crt
+certs/**/*.key
+certs/**/*.pem

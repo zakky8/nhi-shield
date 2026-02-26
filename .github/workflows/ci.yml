@@ -1,0 +1,175 @@
+# CI Workflow to address CI failures
+
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: nhishield_test
+          POSTGRES_USER: nhiadmin
+          POSTGRES_PASSWORD: ciTestOnly123
+        ports:
+          - 5432:5432
+        options: >
+          --health-cmd "pg_isready -U nhiadmin -d nhishield_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+      neo4j:
+        image: neo4j:5.15-community
+        env:
+          NEO4J_AUTH: neo4j/ciTestOnly123
+        ports:
+          - 7687:7687
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: backend/api/package-lock.json
+      - name: Install API dependencies
+        working-directory: backend/api
+        run: npm ci || npm install
+      - name: Lint API
+        working-directory: backend/api
+        run: npm run lint --if-present
+      - name: Run Database Migrations
+        env:
+          DATABASE_URL: postgresql://nhiadmin:ciTestOnly123@localhost:5432/nhishield_test
+          NODE_PATH: ./backend/api/node_modules
+        run: |
+          cd backend/api && npm ci || npm install
+          cd ../../ && node database/migrate.js
+      - name: Test API
+        working-directory: backend/api
+        env:
+          DATABASE_URL: postgresql://nhiadmin:ciTestOnly123@localhost:5432/nhishield_test
+          NEO4J_URI: bolt://localhost:7687
+          NEO4J_PASSWORD: ciTestOnly123
+          REDIS_URL: redis://localhost:6379
+          JWT_SECRET: ciTestOnlyJwtKey2026ForActions
+          ENCRYPTION_KEY: ciTestOnlyEncryptionKey32charsXX
+          NODE_ENV: test
+        run: npm test -- --coverage --forceExit --detectOpenHandles --runInBand
+      - name: Run npm audit (API) – non‑blocking
+        working-directory: backend/api
+        run: npm audit --audit-level=low || true
+      - name: Frontend setup
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install Frontend dependencies
+        working-directory: frontend
+        run: npm ci || npm install
+      - name: Lint Frontend
+        working-directory: frontend
+        run: npm run lint --if-present
+      - name: Test Frontend
+        working-directory: frontend
+        run: npm test -- --coverage --watchAll=false --passWithNoTests
+      - name: Run npm audit (Frontend) – non‑blocking
+        working-directory: frontend
+        run: npm audit --audit-level=low || true
+      - name: Build Frontend
+        working-directory: frontend
+        run: npm run build
+      - name: Stop GHA Services
+        run: |
+          echo "Stopping all background GHA service containers to free up ports for Integration Tests..."
+          docker stop $(docker ps -q) || true
+          docker rm $(docker ps -aq) || true
+          
+      - name: Integration Tests
+        run: |
+          # Create required directories for volume mounts
+          mkdir -p certs/api certs/ca
+          touch certs/api/api.crt certs/api/api.key certs/ca/ca.crt
+
+          cp .env.example .env
+          # Use placeholder values for required env vars to prevent docker-compose error
+          sed -i 's/CHANGE_ME_strong_password_here/ciPassword123/g' .env
+          sed -i 's/CHANGE_ME_neo4j_password_here/ciPassword123/g' .env
+          sed -i 's/CHANGE_ME_redis_password_here/ciPassword123/g' .env
+          sed -i 's/CHANGE_ME_influx_password_here/ciPassword123/g' .env
+          sed -i 's/CHANGE_ME_influx_token_here_min_16_chars/ciToken123456789/g' .env
+          sed -i 's/CHANGE_ME_qdrant_api_key_here/ciApiKey123/g' .env
+          sed -i 's/CHANGE_ME_generate_with_crypto_randomBytes_64/ciSecretKey123/g' .env
+          sed -i 's/CHANGE_ME_32_chars_exactly_here!/ciTestOnlyEncryptionKey32charsXX/g' .env
+          sed -i 's/CHANGE_ME_grafana_password_here/ciPassword123/g' .env
+
+          # ensure no processes are holding required ports
+          fuser -k 3000/tcp || true
+          fuser -k 3001/tcp || true
+          fuser -k 5432/tcp || true
+          fuser -k 6379/tcp || true
+          fuser -k 7687/tcp || true
+          docker compose --project-directory . --project-name nhi_ci -f docker/docker-compose.yml up -d --build
+
+          # Wait for services with retries (up to ~5 minutes)
+          docker compose --project-directory . -f docker/docker-compose.yml ps
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:3000/health >/dev/null 2>&1; then
+              echo "API healthy"
+              break
+            fi
+            echo "Waiting for API (attempt $i/30)..."
+            sleep 10
+          done
+
+          if ! curl -fsS http://localhost:3000/health >/dev/null 2>&1; then
+            echo "ERROR: API did not become healthy after retries"
+            docker compose --project-directory . -f docker/docker-compose.yml logs --no-color || true
+            exit 1
+          fi
+
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:3001/api/health >/dev/null 2>&1; then
+              echo "Grafana healthy"
+              break
+            fi
+            echo "Waiting for Grafana (attempt $i/30)..."
+            sleep 10
+          done
+
+          if ! curl -fsS http://localhost:3001/api/health >/dev/null 2>&1; then
+            echo "WARNING: Grafana did not become healthy after retries"
+            docker compose --project-directory . -f docker/docker-compose.yml logs --no-color || true
+          fi
+      - name: Cleanup Docker
+        if: always()
+        run: |
+          docker compose --project-directory . -f docker/docker-compose.yml down -v
+
+  code-quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: CodeQL Init
+        uses: github/codeql-action/init@v4
+        with:
+          languages: javascript, python
+      - uses: github/codeql-action/autobuild@v4
+      - name: CodeQL Analyze
+        uses: github/codeql-action/analyze@v4
