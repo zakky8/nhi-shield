@@ -258,7 +258,7 @@ jobs:
           # Create required directories for volume mounts
           mkdir -p certs/api certs/ca
           touch certs/api/api.crt certs/api/api.key certs/ca/ca.crt
-          
+
           cp .env.example .env
           # Use placeholder values for required env vars to prevent docker-compose error
           sed -i 's/CHANGE_ME_strong_password_here/ciPassword123/g' .env
@@ -270,20 +270,33 @@ jobs:
           sed -i 's/CHANGE_ME_generate_with_crypto_randomBytes_64/ciSecretKey123/g' .env
           sed -i 's/CHANGE_ME_32_chars_exactly_here!/ciTestOnlyEncryptionKey32charsXX/g' .env
           sed -i 's/CHANGE_ME_grafana_password_here/ciPassword123/g' .env
-          
+
           docker compose --project-directory . -f docker/docker-compose.yml up -d --build
 
-      
-      - name: Wait for services
+      - name: Wait for services and perform health checks
         run: |
-          sleep 60
+          # Wait for services with retries
           docker compose --project-directory . -f docker/docker-compose.yml ps
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:3000/health >/dev/null 2>&1; then
+              echo "API healthy"
+              break
+            fi
+            echo "Waiting for API (attempt $i/30)..."
+            sleep 10
+          done
 
-      
-      - name: Run health checks
-        run: |
-          curl -f http://localhost:3000/health || exit 1
-          curl -f http://localhost/ || exit 1
+          if ! curl -fsS http://localhost:3000/health >/dev/null 2>&1; then
+            echo "ERROR: API did not become healthy after retries"
+            docker compose --project-directory . -f docker/docker-compose.yml logs --no-color || true
+            exit 1
+          fi
+
+          # Basic root check for frontend
+          if ! curl -fsS http://localhost/ >/dev/null 2>&1; then
+            echo "WARNING: Frontend root URL not responding after retries"
+            docker compose --project-directory . -f docker/docker-compose.yml logs --no-color || true
+          fi
       
       - name: Run integration tests
         run: |

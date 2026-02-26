@@ -99,7 +99,7 @@ jobs:
           # Create required directories for volume mounts
           mkdir -p certs/api certs/ca
           touch certs/api/api.crt certs/api/api.key certs/ca/ca.crt
-          
+
           cp .env.example .env
           # Use placeholder values for required env vars to prevent docker-compose error
           sed -i 's/CHANGE_ME_strong_password_here/ciPassword123/g' .env
@@ -111,14 +111,39 @@ jobs:
           sed -i 's/CHANGE_ME_generate_with_crypto_randomBytes_64/ciSecretKey123/g' .env
           sed -i 's/CHANGE_ME_32_chars_exactly_here!/ciTestOnlyEncryptionKey32charsXX/g' .env
           sed -i 's/CHANGE_ME_grafana_password_here/ciPassword123/g' .env
-          
+
           docker compose --project-directory . -f docker/docker-compose.yml up -d --build
-          # Wait for services to be ready
-          sleep 60
-          # Verify health
+
+          # Wait for services with retries (up to ~5 minutes)
           docker compose --project-directory . -f docker/docker-compose.yml ps
-          curl -f http://localhost:3000/health || echo "API health check failed"
-          curl -f http://localhost:3001/grafana/api/health || echo "Grafana health check failed"
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:3000/health >/dev/null 2>&1; then
+              echo "API healthy"
+              break
+            fi
+            echo "Waiting for API (attempt $i/30)..."
+            sleep 10
+          done
+
+          if ! curl -fsS http://localhost:3000/health >/dev/null 2>&1; then
+            echo "ERROR: API did not become healthy after retries"
+            docker compose --project-directory . -f docker/docker-compose.yml logs --no-color || true
+            exit 1
+          fi
+
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:3001/grafana/api/health >/dev/null 2>&1; then
+              echo "Grafana healthy"
+              break
+            fi
+            echo "Waiting for Grafana (attempt $i/30)..."
+            sleep 10
+          done
+
+          if ! curl -fsS http://localhost:3001/grafana/api/health >/dev/null 2>&1; then
+            echo "WARNING: Grafana did not become healthy after retries"
+            docker compose --project-directory . -f docker/docker-compose.yml logs --no-color || true
+          fi
       - name: Cleanup Docker
         if: always()
         run: |
