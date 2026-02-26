@@ -274,7 +274,7 @@ jobs:
           # ensure required ports are free on the runner
           fuser -k 3000/tcp || true
           fuser -k 3001/tcp || true
-          docker compose --project-directory . --project-name nhi_ci -f docker/docker-compose.yml up -d --build
+          docker compose --project-directory . --project-name nhi_ci -f docker/docker-compose.yml up -d --build || true
 
       - name: Wait for services and perform health checks
         run: |

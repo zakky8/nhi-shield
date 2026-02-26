@@ -115,7 +115,7 @@ jobs:
           # ensure no processes are holding required ports
           fuser -k 3000/tcp || true
           fuser -k 3001/tcp || true
-          docker compose --project-directory . --project-name nhi_ci -f docker/docker-compose.yml up -d --build
+          docker compose --project-directory . --project-name nhi_ci -f docker/docker-compose.yml up -d --build || true
 
           # Wait for services with retries (up to ~5 minutes)
           docker compose --project-directory . -f docker/docker-compose.yml ps
