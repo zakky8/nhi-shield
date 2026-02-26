@@ -63,7 +63,7 @@ jobs:
           JWT_SECRET: ciTestOnlyJwtKey2026ForActions
           ENCRYPTION_KEY: ciTestOnlyEncryptionKey32charsXX
           NODE_ENV: test
-        run: npm test -- --coverage --forceExit --detectOpenHandles
+        run: npm test -- --coverage --forceExit --detectOpenHandles --runInBand
       - name: Run npm audit (API) – non‑blocking
         working-directory: backend/api
         run: npm audit --audit-level=low || true
@@ -112,7 +112,10 @@ jobs:
           sed -i 's/CHANGE_ME_32_chars_exactly_here!/ciTestOnlyEncryptionKey32charsXX/g' .env
           sed -i 's/CHANGE_ME_grafana_password_here/ciPassword123/g' .env
 
-          docker compose --project-directory . -f docker/docker-compose.yml up -d --build
+          # ensure no processes are holding required ports
+          fuser -k 3000/tcp || true
+          fuser -k 3001/tcp || true
+          docker compose --project-directory . --project-name nhi_ci -f docker/docker-compose.yml up -d --build
 
           # Wait for services with retries (up to ~5 minutes)
           docker compose --project-directory . -f docker/docker-compose.yml ps
