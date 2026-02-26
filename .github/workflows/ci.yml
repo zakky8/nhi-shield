@@ -131,7 +131,7 @@ jobs:
       - name: CodeQL Init
         uses: github/codeql-action/init@v4
         with:
-          languages: javascript-typescript, python
+          languages: javascript, python
       - uses: github/codeql-action/autobuild@v4
       - name: CodeQL Analyze
         uses: github/codeql-action/analyze@v4
